@@ -110,6 +110,9 @@
     border-radius: 4px;
     transition: all 0.2s ease;
 }
+.form-textarea{
+    line-height: 1.5;
+}
 
 .form-input:focus,
 .form-textarea:focus {
