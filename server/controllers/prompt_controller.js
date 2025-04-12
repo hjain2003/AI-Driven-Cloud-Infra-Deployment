@@ -20,77 +20,66 @@ const LOCAL_TERRAFORM_PATH = "C:\\Terraform_files\\main.tf";
 //     }
 //   }
 const enhancePrompt = (userPrompt, accessKey, secretKey) => {
-  return `Generate a Terraform script for AWS infrastructure deployment. Hardcode the access key and secret key demo values as provided below in the script.
+  return `# Terraform Script Generator Template
 
-Use the following AWS credentials:
+Generate a Terraform script for AWS infrastructure deployment based on the following parameters:
+## AWS Configuration
 - AWS Access Key: ${accessKey}
 - AWS Secret Key: ${secretKey}
-The user’s request: "${userPrompt}"
+- Default Region: us-west-1 (use this unless another region is specified)
+- User Request: "${userPrompt}"
 
-**Important Constraints:**
-- **DO NOT include source, version, terraform block, required_providers, source, or version. They should NOT be in the script.**
-- Assume region = "ap-south-1" if not mentioned.
-- Default instance type: t2.micro
-- DO NOT ADD NETWORK INTERFACES
-- DO NOT DUPLICATE Autoscaling grp resources
-- If pulling, docker images, if not specified by user, run image from port 3000
-- Use only the following AMI images:
-  - Amazon Linux Machine: ami-0d682f26195e9ec0f
-  - Ubuntu: ami-00bb6a80f01f03502
-  - Windows: ami-05a00967f06885a63
-  - Redhat Linux: ami-02ddb77f8f93ca4ca
-  
-  **WHEN USER MENTION LOAD BALANCER**, SPECIAL RULES APPLY:
-  Application Load Balancer (ALB) must include:
+ALWAYS include the following provider block at the beginning of the script:
 
-    subnets = [<list of subnet IDs>] (Use existing VPC subnets)
-    security_groups = [aws_security_group.lb_sg.id]
-    load_balancer_type = "application"
-    scheme = "internet-facing"
-    Use resource "aws_lb" to create load balancer and do not use "scheme" parameter in it
-
-    *THESE ABOVE APPL LOAD BALANCER RULES SHOULD BE APPLIED AT THE VERY BEGGN WHEN CREATING THE SERVER...NOT AT THE END AGAIN*
-
-    Target Group must include:
-    vpc_id = aws_vpc.main.id
-    port = 3000
-    protocol = "HTTP"
-    Listeners must:
-
-    Use data.aws_subnets.default.ids to fetch all default VPC subnets
-    Use data "aws_subnets" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
+provider "aws" {
+  access_key = "${accessKey}"
+  secret_key = "${secretKey}"
+  region     = "us-west-1"
 }
-    Use vpc_security_group_ids = [aws_security_group.allow_all.id, aws_security_group.lb_sg.id]
 
-    Update vpc_id = data.aws_vpc.default.id in aws_lb_target_group
+## Infrastructure Defaults
+- Default EC2 Instance Type: t2.micro
+- AMI Images (use these exclusively):
+  - Amazon Linux: ami-020fbc00dbecba358
+  - Ubuntu: ami-04f7a54071e74f488
+  - Windows: ami-02bee0c11794ac328
+  - RedHat Linux: ami-0e40cbc388241f8ce
 
-    Attach to the correct Target Group.
-    Use port = 80 and protocol = "HTTP".
-    Ensure proper security groups:
+- Default container port: 3000 (for Docker deployments)
 
-    Allow inbound traffic on ports 80 and 3000 for Load Balancer & Instances.
-    Attach security groups properly.
-    DO NOT DUPLICATE RESOURCES IN AWS INSTANCES FOR SERVERS
+## Security Group Configuration
+- always include ssh, http and https by default
 
 
-**Strict Guidelines:**
-- NO DUPLICATE RESOURCES SHOULD BE CREATED. CROSS CHECK THIS AT THE BEGGN AND THE END
-- The response should contain ONLY the Terraform script. **NO extra comments, explanations, or remarks.**
-- Whatever servers you have created, you must return the public ips of the server to the user
-.**
-`;
+## CRITICAL REQUIREMENTS
+1. Include ONLY the Terraform code in your response, no explanations
+2. Make sure you create the aws_instance block at the very end only.
+3. Never use cloud config with user data, always use bin bash
+3. If user asks for some configurations like installing any packages/softwares, configuring web server etc...make sure to use user data with bash script and to update and install it on the server
+4. always use: vpc_security_group_ids when creating ec2 instance resource
+
+## Response Format
+The response should contain ONLY the Terraform script with appropriate AWS resource definitions.`;
 };
 
-// Function to extract only the Terraform script using regex
 const extractTerraformCode = (responseText) => {
-  const codeRegex = /```(?:hcl|terraform)?\n([\s\S]*?)\n```/; // Match Terraform code blocks
-  const match = responseText.match(codeRegex);
-  return match ? match[1] : null; // Extract only the script part
+  // Try to match fenced code block first
+  const codeBlockRegex = /```(?:hcl|terraform)?\n([\s\S]*?)\n```/;
+  const match = responseText.match(codeBlockRegex);
+
+  if (match) return match[1];
+
+  // If no fenced block, assume full response is the script
+  const fallbackCleaned = responseText.trim();
+
+  // Basic sanity check: must contain "provider" and "resource"
+  if (fallbackCleaned.includes("provider") && fallbackCleaned.includes("resource")) {
+    return fallbackCleaned;
+  }
+
+  return null;
 };
+
 
 // Function to generate Terraform script
 const generateScript = async (userPrompt, accessKey, secretKey) => {
