@@ -3,7 +3,7 @@ import { exec } from "child_process";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import path from "path";
 
-const API_KEY = "AIzaSyDE88PCvIUEbpgICrtLsKA4UwYlbjQ9be8";
+const API_KEY = "################"; //create your gemini api key
 const genAI = new GoogleGenerativeAI(API_KEY);
 
 // Define paths
@@ -133,7 +133,7 @@ export const handlePrompt = async (req, res) => {
 
     const terraformScript = await generateScript(prompt, accessKey, secretKey);
     await saveAndApplyTerraform(terraformScript);
-    
+
     res.json({
       message: "Done! Check your AWS console.",
       script: terraformScript,
