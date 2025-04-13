@@ -1,6 +1,7 @@
 import fs from "fs-extra";
 import { exec } from "child_process";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import path from "path";
 
 const API_KEY = "AIzaSyDE88PCvIUEbpgICrtLsKA4UwYlbjQ9be8";
 const genAI = new GoogleGenerativeAI(API_KEY);
@@ -9,16 +10,7 @@ const genAI = new GoogleGenerativeAI(API_KEY);
 const BACKEND_SCRIPT_PATH = "./Scripts/main.tf";
 const LOCAL_TERRAFORM_PATH = "C:\\Terraform_files\\main.tf";
 
-// Function to enhance user prompt with AWS credentials
-// Balancer subnets.**
-// - **Fetch subnets using:**
-//   terraform
-//   data "aws_subnets" "default" {
-//     filter {
-//       name   = "vpc-id"
-//       values = [data.aws_vpc.default.id]
-//     }
-//   }
+
 const enhancePrompt = (userPrompt, accessKey, secretKey) => {
   return `# Terraform Script Generator Template
 
@@ -54,9 +46,14 @@ provider "aws" {
 ## CRITICAL REQUIREMENTS
 1. Include ONLY the Terraform code in your response, no explanations
 2. Make sure you create the aws_instance block at the very end only.
-3. Never use cloud config with user data, always use bin bash
-3. If user asks for some configurations like installing any packages/softwares, configuring web server etc...make sure to use user data with bash script and to update and install it on the server
+3. Never use cloud config with user data, always use bin bash [only if auser data is required by user]
+3. IF user asks for some configurations like installing any packages/softwares, configuring web server etc...make sure to use user data with bash script and to update and install it on the server
 4. always use: vpc_security_group_ids when creating ec2 instance resource
+5. for dbs, "db_instance_class" is deprecated, use "instance_class" instead. 
+6. If user asks to pull a docker image, by default, if not mentioned by user, run the container on instance with -d and -p 3000:3000. Make sure to open that port in security group as well
+7. For load balancing, use "aws_lb_target_group_attachment"
+8. In us-west-1, only available av zones are us-west-1a and us-west1c. Use them only.
+9. Make sure to label all subnets, vpc, gateways, instances with a name 
 
 ## Response Format
 The response should contain ONLY the Terraform script with appropriate AWS resource definitions.`;
@@ -103,26 +100,28 @@ const generateScript = async (userPrompt, accessKey, secretKey) => {
 
 // Function to save and apply Terraform script
 const saveAndApplyTerraform = async (script) => {
-  try {
-    // Save script in both locations
-    await fs.outputFile(BACKEND_SCRIPT_PATH, script);
-    await fs.outputFile(LOCAL_TERRAFORM_PATH, script);
-    console.log("Terraform script saved successfully.");
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Save script in both locations
+      await fs.outputFile(BACKEND_SCRIPT_PATH, script);
+      await fs.outputFile(LOCAL_TERRAFORM_PATH, script);
+      console.log("Terraform script saved successfully...validating configuration.");
 
-    // Run Terraform apply
-    exec("terraform apply -auto-approve", { cwd: "C:\\Terraform_files" }, (error, stdout, stderr) => {
-      if (error) {
-        console.error("Terraform apply error:", stderr);
-        return;
-      }
-      console.log("Terraform apply output:", stdout);
-    });
-  } catch (error) {
-    console.error("Error saving Terraform script:", error);
-    throw new Error("Failed to save or execute Terraform script.");
-  }
+      // Apply script
+      exec("terraform apply -auto-approve", { cwd: "C:\\Terraform_files" }, (error, stdout, stderr) => {
+        if (error) {
+          console.error("Terraform apply error:", stderr);
+          reject("Terraform apply failed");
+          return;
+        }
+        console.log("Terraform apply output:", stdout);
+        resolve(); 
+      });
+    } catch (err) {
+      reject("Failed to save or apply Terraform script.");
+    }
+  });
 };
-
 // Controller function to handle prompt request
 export const handlePrompt = async (req, res) => {
   try {
@@ -134,8 +133,12 @@ export const handlePrompt = async (req, res) => {
 
     const terraformScript = await generateScript(prompt, accessKey, secretKey);
     await saveAndApplyTerraform(terraformScript);
-
-    res.json({ message: "Terraform script executed successfully", script: terraformScript });
+    
+    res.json({
+      message: "Done! Check your AWS console.",
+      script: terraformScript,
+      downloadUrl: "http://localhost:5000/download/main.tf"
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
